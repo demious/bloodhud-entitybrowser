@@ -507,8 +507,22 @@ function exportLists() {
 
 function copyExport() {
   const ta = document.getElementById('export-text');
-  ta.select();
-  document.execCommand('copy');
+  const text = ta.value;
+  // Modern clipboard API (works on HTTPS); fallback to execCommand for file://
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = event.target;
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = orig, 1200);
+    }).catch(() => {
+      ta.select();
+      document.execCommand('copy');
+    });
+  } else {
+    ta.select();
+    document.execCommand('copy');
+  }
 }
 
 function importLists() {
