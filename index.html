@@ -16,7 +16,7 @@
     background: #252526; border-bottom: 1px solid #3a3a3a;
     padding: 10px 16px;
     display: grid;
-    grid-template-columns: auto 1fr auto auto auto;
+    grid-template-columns: auto 1fr auto auto auto auto auto;
     gap: 8px;
     align-items: center;
   }
@@ -256,31 +256,20 @@
   </div>
 </dialog>
 
-<dialog id="build-table-dialog">
-  <div class="dialog-title" style="color:#2d7a2d;">Build New Table — Publish to Community</div>
-  <p style="font-size:13px;color:#d4d4d4;line-height:1.5;">
-    This bundles your current whitelist + blacklist + renames into a JSON payload
-    and copies it to your clipboard. To publish it as the new community default
-    that everyone visiting this site will see, run the command shown below in
-    your terminal.
-  </p>
-  <div style="background:#1e1e1e;border:1px solid #3a3a3a;padding:10px;border-radius:3px;margin:10px 0;">
-    <div style="font-size:11px;color:#888;margin-bottom:6px;">Step 1 — click this:</div>
-    <button onclick="copyForBuild()" style="background:#2d7a2d;width:100%;padding:8px;font-size:13px;">Copy Lists to Clipboard</button>
-    <div id="build-copy-status" style="font-size:11px;color:#4ec9b0;margin-top:6px;height:14px;"></div>
+<dialog id="build-table-dialog" style="min-width:420px;max-width:520px;">
+  <div class="dialog-title" style="color:#2d7a2d;margin-bottom:8px;">Publish as New Default</div>
+  <div style="font-size:11px;color:#888;margin-bottom:6px;">1. Copy current state to clipboard:</div>
+  <button onclick="copyForBuild()" style="background:#2d7a2d;width:100%;padding:6px;font-size:12px;">Copy Lists to Clipboard</button>
+  <div id="build-copy-status" style="font-size:11px;color:#4ec9b0;margin:4px 0 10px;height:14px;"></div>
+
+  <div style="font-size:11px;color:#888;margin-bottom:6px;">2. Run in terminal (BloodHUD dir):</div>
+  <code style="display:block;background:#0d0d0d;color:#4ec9b0;padding:6px 8px;font-family:Consolas,monospace;font-size:11px;border-radius:2px;user-select:all;">python build_character_browser.py --update-defaults-from-clipboard --push</code>
+  <div style="margin-top:4px;">
+    <button onclick="copyBuildCommand()" class="secondary" style="font-size:10px;padding:2px 6px;">Copy Command</button>
+    <span id="build-cmd-status" style="font-size:10px;color:#4ec9b0;margin-left:6px;"></span>
   </div>
-  <div style="background:#1e1e1e;border:1px solid #3a3a3a;padding:10px;border-radius:3px;margin:10px 0;">
-    <div style="font-size:11px;color:#888;margin-bottom:6px;">Step 2 — paste this into your terminal (in the BloodHUD directory):</div>
-    <code style="display:block;background:#0d0d0d;color:#4ec9b0;padding:8px;font-family:Consolas,monospace;font-size:12px;border-radius:2px;user-select:all;">python build_character_browser.py --update-defaults-from-clipboard --push</code>
-    <button onclick="copyBuildCommand()" class="secondary" style="margin-top:6px;font-size:11px;padding:3px 8px;">Copy Command</button>
-    <span id="build-cmd-status" style="font-size:11px;color:#4ec9b0;margin-left:8px;"></span>
-  </div>
-  <p style="font-size:11px;color:#888;line-height:1.5;">
-    The command reads the JSON from your clipboard, writes it to <code>default_lists.json</code>
-    in your local repo, commits with a timestamp, and pushes to GitHub. Pages rebuilds
-    in ~30 seconds. Visitors then click "Load Defaults" to pull the new version.
-  </p>
-  <div class="dialog-actions">
+
+  <div class="dialog-actions" style="margin-top:14px;">
     <button onclick="document.getElementById('build-table-dialog').close()">Done</button>
   </div>
 </dialog>
