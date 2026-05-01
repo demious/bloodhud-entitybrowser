@@ -88,17 +88,31 @@
     border-bottom: 1px solid #3a3a3a; cursor: pointer; user-select: none;
   }
   /* Column widths so table-layout:fixed has anchors */
-  th:nth-child(1) { width: 30px; }    /* checkbox */
-  th:nth-child(2) { width: 70px; }    /* key */
-  th:nth-child(3) { width: 200px; }   /* display name */
-  th:nth-child(4) { width: 280px; }   /* internal name */
-  th:nth-child(5) { width: 90px; text-align: right; }   /* HP */
-  th:nth-child(6) { width: 130px; }   /* race */
-  th:nth-child(7) { width: 140px; }   /* AI */
-  th:nth-child(8) { width: 130px; }   /* class */
-  th:nth-child(9) { width: 70px; }    /* tier */
-  th:nth-child(10) { width: auto; }   /* territory */
-  th:nth-child(11) { width: 80px; }   /* actions */
+  th:nth-child(1)  { width: 30px; }    /* checkbox */
+  th:nth-child(2)  { width: 70px; }    /* key */
+  th:nth-child(3)  { width: 180px; }   /* engine display name */
+  th:nth-child(4)  { width: 180px; }   /* bloodhud display name */
+  th:nth-child(5)  { width: 240px; }   /* internal name */
+  th:nth-child(6)  { width: 80px; text-align: right; }   /* HP */
+  th:nth-child(7)  { width: 110px; }   /* race */
+  th:nth-child(8)  { width: 130px; }   /* AI */
+  th:nth-child(9)  { width: 110px; }   /* class */
+  th:nth-child(10) { width: 70px; }    /* tier */
+  th:nth-child(11) { width: auto; }    /* territory */
+  th:nth-child(12) { width: 80px; }    /* actions */
+  /* Editable cell styling */
+  td.editable {
+    cursor: text;
+    border-left: 2px solid transparent;
+  }
+  td.editable:hover { border-left-color: #4ec9b0; }
+  td.editable input {
+    width: 100%; background: #1e1e1e; color: #d4d4d4;
+    border: 1px solid #007acc; border-radius: 2px;
+    padding: 2px 4px; font-size: 12px; font-family: inherit;
+  }
+  td.editable input:focus { outline: none; }
+  td.editable .auto-marker { color: #555; font-style: italic; font-size: 10px; margin-left: 4px; }
   th:hover { color: #d4d4d4; }
   td {
     padding: 4px 10px; border-bottom: 1px solid #2a2a2a;
@@ -197,6 +211,8 @@
   <button class="wl" onclick="bulkAssign('wl')">+ Whitelist Selected</button>
   <button class="bl" onclick="bulkAssign('bl')">- Blacklist Selected</button>
   <button class="clear secondary" onclick="bulkAssign(null)">Clear Tag</button>
+  <button class="secondary" onclick="bulkRename()">Bulk Rename</button>
+  <button class="secondary" onclick="bulkAutoClean()">Auto-Clean Selected</button>
   <button class="secondary" onclick="selectAllVisible()">Select All Visible</button>
   <button class="secondary" onclick="deselectAll()">Deselect</button>
 </div>
@@ -207,7 +223,8 @@
     <tr>
       <th class="selectall-cell"><input type="checkbox" id="select-all-cb" onchange="toggleAll(this)"></th>
       <th data-sort="key">Key</th>
-      <th data-sort="display_en">Display Name</th>
+      <th data-sort="display_en">Engine Display Name</th>
+      <th data-sort="bloodhud_display_name">BloodHUD Display Name</th>
       <th data-sort="name">Internal Name</th>
       <th data-sort="ingame_hp">HP (in-game)</th>
       <th data-sort="race_en">Race</th>
@@ -235,6 +252,18 @@
   <div class="dialog-actions">
     <button class="secondary" onclick="copyExport()">Copy to Clipboard</button>
     <button onclick="document.getElementById('export-dialog').close()">Close</button>
+  </div>
+</dialog>
+
+<dialog id="bulk-rename-dialog">
+  <div class="dialog-title">Bulk Rename — BloodHUD Display Name</div>
+  <p style="font-size:12px;color:#888;">
+    Edit names below. Empty = revert to auto. Save All applies all changes.
+  </p>
+  <div id="bulk-rename-rows" style="max-height:60vh;overflow-y:auto;border:1px solid #3a3a3a;padding:6px;"></div>
+  <div class="dialog-actions">
+    <button class="secondary" onclick="document.getElementById('bulk-rename-dialog').close()">Cancel</button>
+    <button onclick="performBulkRename()">Save All</button>
   </div>
 </dialog>
 
@@ -270,6 +299,71 @@ const ENTRIES = RAW.entries.map(r => ({
 
 const STORAGE_KEY = 'bloodhud_character_lists_v1';
 const FILTERS_KEY = 'bloodhud_filters_v1';
+const RENAMES_KEY = 'bloodhud_renames_v1';
+
+// Per-key user override of the auto-cleaned BloodHUD display name.
+// {key: "User custom name"}
+let renames = loadRenames();
+
+function loadRenames() {
+  try {
+    const raw = localStorage.getItem(RENAMES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+function saveRenames() {
+  localStorage.setItem(RENAMES_KEY, JSON.stringify(renames));
+}
+
+// Auto-cleanup: take the engine display name and produce a tighter
+// BloodHUD-friendly form. Singularize the trailing word (drop 's' if it
+// looks like a real plural — not "ss", not "us", not too short), and
+// strip leftover weapon-noun suffixes that escaped the prefix cleanup.
+const AUTO_STRIP_SUFFIXES = [
+  'OneHandBomb', 'TwoHandBomb', 'OneHandBow', 'OneHandShotgun',
+  'OneHandMusket', 'OneHandCannon', 'OneHandFist', 'OneHandPike',
+  'TwoHandFlamethrower', 'OneHandGiantSword', 'TwoHandGiantSword',
+  'TwoHandGiantSpear', 'TwoHandGiantAxe', 'GiantSpear', 'GiantAxe',
+  'TwoHandWarHammer', 'WarHammer', 'TwoHandHalberd', 'Halberd',
+  'OneHandSword', 'TwoHandSword', 'OneHandAxe', 'TwoHandAxe',
+  'OneHandMace', 'TwoHandMace', 'OneHandHammer', 'TwoHandHammer',
+  'OneHandSpear', 'TwoHandSpear', 'OneHandDagger', 'TwoHandDagger',
+  'DualDagger', 'DualAxe', 'DualSword',
+  'SwordTowerShield', 'SwordShield', 'TowerShield', 'PlateArmor',
+];
+
+function autoCleanForBloodHud(displayEn) {
+  if (!displayEn) return '';
+  let s = displayEn.trim();
+  // Strip trailing weapon-noun phrases (case-insensitive whole-word match)
+  for (const suffix of AUTO_STRIP_SUFFIXES) {
+    if (s.endsWith(' ' + suffix)) {
+      s = s.slice(0, -(suffix.length + 1));
+      break;
+    }
+  }
+  // Singularize trailing word: drop final 's' if it looks like a plural
+  const words = s.split(/\s+/);
+  if (words.length > 0) {
+    const last = words[words.length - 1];
+    if (last.length > 3 &&
+        last.endsWith('s') &&
+        !last.endsWith('ss') &&
+        !last.endsWith('us') &&
+        !last.endsWith('is') &&
+        !/^[A-Z]+$/.test(last)) {  // don't touch acronyms like "MD5"
+      words[words.length - 1] = last.slice(0, -1);
+    }
+  }
+  return words.join(' ').trim();
+}
+
+function getBloodHudName(e) {
+  if (renames[e.key] !== undefined) return { name: renames[e.key], custom: true };
+  return { name: autoCleanForBloodHud(e.display_en), custom: false };
+}
 let lists = loadLists();        // {whitelist: Set<key>, blacklist: Set<key>}
 let selected = new Set();
 // Multi-select: each axis is a Set of selected values. Empty Set = match all.
@@ -428,10 +522,15 @@ function renderRow(e) {
   const territoryDisplay = e.territory_en
     ? `<span title="${escapeHtml(e.territory_kr || '')}" style="color:#888;">${escapeHtml(e.territory_en)}</span>`
     : `<span style="color:#888;">${escapeHtml(e.territory_kr || '')}</span>`;
+  const bh = getBloodHudName(e);
+  const bhDisplay = bh.custom
+    ? `<b style="color:#4ec9b0;">${escapeHtml(bh.name)}</b>`
+    : `${escapeHtml(bh.name)}<span class="auto-marker">auto</span>`;
   return `<tr class="${cls}">
     <td class="selectall-cell"><input type="checkbox" data-key="${e.key}" ${checked} onchange="toggleSel(${e.key}, this.checked)"></td>
     <td>${e.key}</td>
-    <td><b>${escapeHtml(e.display_en || '')}</b></td>
+    <td>${escapeHtml(e.display_en || '')}</td>
+    <td class="editable" data-key="${e.key}" onclick="startEdit(${e.key}, this)" title="Click to edit. Empty = revert to auto.">${bhDisplay}</td>
     <td style="color:#888;">${escapeHtml(e.name || '')}</td>
     <td style="text-align:right; font-variant-numeric:tabular-nums;">${hpDisplay}</td>
     <td>${raceDisplay}</td>
@@ -441,6 +540,30 @@ function renderRow(e) {
     <td>${territoryDisplay}</td>
     <td><div class="actions">${wlBtn}${blBtn}</div></td>
   </tr>`;
+}
+
+function startEdit(key, td) {
+  const current = renames[key] !== undefined ? renames[key] : autoCleanForBloodHud(ENTRIES.find(x => x.key === key).display_en);
+  td.innerHTML = `<input type="text" value="${escapeHtml(current)}"
+    onblur="finishEdit(${key}, this.value)"
+    onkeydown="if(event.key==='Enter')this.blur(); else if(event.key==='Escape'){this.dataset.cancel='1';this.blur();}">`;
+  const input = td.querySelector('input');
+  input.focus();
+  input.select();
+}
+
+function finishEdit(key, value) {
+  const input = event.target;
+  if (input.dataset.cancel === '1') { render(); return; }
+  const v = value.trim();
+  if (v === '' || v === autoCleanForBloodHud(ENTRIES.find(x => x.key === key).display_en)) {
+    delete renames[key];
+  } else {
+    renames[key] = v;
+  }
+  saveRenames();
+  invalidateCache();
+  render();
 }
 
 function render() {
@@ -455,9 +578,9 @@ function render() {
   const bottomPad = (total - endIdx) * ROW_HEIGHT;
 
   let html = '';
-  if (topPad > 0) html += `<tr style="height:${topPad}px"><td colspan="11"></td></tr>`;
+  if (topPad > 0) html += `<tr style="height:${topPad}px"><td colspan="12"></td></tr>`;
   for (let i = startIdx; i < endIdx; i++) html += renderRow(rows[i]);
-  if (bottomPad > 0) html += `<tr style="height:${bottomPad}px"><td colspan="11"></td></tr>`;
+  if (bottomPad > 0) html += `<tr style="height:${bottomPad}px"><td colspan="12"></td></tr>`;
   tbody.innerHTML = html;
 
   document.getElementById('visible-count').textContent = total;
@@ -508,6 +631,71 @@ function deselectAll() {
   render();
 }
 
+function bulkAutoClean() {
+  if (selected.size === 0) {
+    alert('Select rows first.');
+    return;
+  }
+  let n = 0;
+  for (const k of selected) {
+    const e = ENTRIES.find(x => x.key === k);
+    if (!e) continue;
+    const auto = autoCleanForBloodHud(e.display_en);
+    // Auto-clean = remove the override (revert to computed value)
+    if (renames[k] !== undefined) {
+      delete renames[k];
+      n++;
+    }
+  }
+  saveRenames();
+  invalidateCache();
+  render();
+  alert(`Reverted ${n} entries to auto-clean.`);
+}
+
+function bulkRename() {
+  if (selected.size === 0) {
+    alert('Select rows first.');
+    return;
+  }
+  const rows = ENTRIES.filter(e => selected.has(e.key));
+  // Sort by display name for predictable editing order
+  rows.sort((a, b) => (a.display_en || '').localeCompare(b.display_en || ''));
+  const html = rows.map(e => {
+    const cur = renames[e.key] !== undefined ? renames[e.key] : autoCleanForBloodHud(e.display_en);
+    return `<div style="display:grid;grid-template-columns:60px 200px 1fr;gap:8px;align-items:center;padding:3px 0;border-bottom:1px solid #2a2a2a;">
+      <span style="color:#888;font-size:11px;">${e.key}</span>
+      <span style="color:#888;font-size:11px;" title="engine: ${escapeHtml(e.display_en || '')}">${escapeHtml(e.display_en || '')}</span>
+      <input type="text" data-key="${e.key}" value="${escapeHtml(cur)}" style="width:100%;background:#1e1e1e;color:#d4d4d4;border:1px solid #3a3a3a;padding:3px 6px;font-size:12px;">
+    </div>`;
+  }).join('');
+  document.getElementById('bulk-rename-rows').innerHTML = html;
+  document.getElementById('bulk-rename-dialog').showModal();
+}
+
+function performBulkRename() {
+  const inputs = document.querySelectorAll('#bulk-rename-rows input');
+  let changed = 0;
+  for (const inp of inputs) {
+    const k = parseInt(inp.dataset.key, 10);
+    const e = ENTRIES.find(x => x.key === k);
+    if (!e) continue;
+    const v = inp.value.trim();
+    const auto = autoCleanForBloodHud(e.display_en);
+    if (v === '' || v === auto) {
+      if (renames[k] !== undefined) { delete renames[k]; changed++; }
+    } else if (renames[k] !== v) {
+      renames[k] = v;
+      changed++;
+    }
+  }
+  saveRenames();
+  invalidateCache();
+  render();
+  document.getElementById('bulk-rename-dialog').close();
+  alert(`Saved ${changed} rename change(s).`);
+}
+
 function toggleAll(cb) {
   if (cb.checked) selectAllVisible();
   else deselectAll();
@@ -532,10 +720,14 @@ function exportLists() {
     .map(e => ({key: e.key, name: e.name, display_en: e.display_en}));
   const blNames = ENTRIES.filter(e => lists.blacklist.has(e.key))
     .map(e => ({key: e.key, name: e.name, display_en: e.display_en}));
+  // Include renames as a flat key -> custom name map
+  const renamesOut = {};
+  for (const k of Object.keys(renames)) renamesOut[k] = renames[k];
   const payload = {
     generated: new Date().toISOString(),
     whitelist: wlNames,
     blacklist: blNames,
+    renames: renamesOut,
   };
   document.getElementById('export-text').value = JSON.stringify(payload, null, 2);
   document.getElementById('export-dialog').showModal();
@@ -619,9 +811,22 @@ async function loadDefaults() {
   for (const k of wlAdded) lists.whitelist.add(k);
   for (const k of blAdded) lists.blacklist.add(k);
   saveLists();
+
+  // Merge renames: defaults add only where no local override exists
+  let renamesAdded = 0;
+  if (payload.renames && typeof payload.renames === 'object') {
+    for (const k of Object.keys(payload.renames)) {
+      if (renames[k] === undefined) {
+        renames[k] = payload.renames[k];
+        renamesAdded++;
+      }
+    }
+    saveRenames();
+  }
+
   invalidateCache();
   render();
-  alert(`Merged: +${wlAdded.length} whitelist, +${blAdded.length} blacklist.`);
+  alert(`Merged: +${wlAdded.length} whitelist, +${blAdded.length} blacklist, +${renamesAdded} renames.`);
 }
 
 function performImport() {
@@ -629,6 +834,11 @@ function performImport() {
     const j = JSON.parse(document.getElementById('import-text').value);
     lists.whitelist = new Set((j.whitelist || []).map(x => typeof x === 'object' ? x.key : x));
     lists.blacklist = new Set((j.blacklist || []).map(x => typeof x === 'object' ? x.key : x));
+    if (j.renames && typeof j.renames === 'object') {
+      renames = {};
+      for (const k of Object.keys(j.renames)) renames[k] = j.renames[k];
+      saveRenames();
+    }
     saveLists();
     invalidateCache();
     render();
