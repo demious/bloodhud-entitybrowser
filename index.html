@@ -258,9 +258,18 @@
 <dialog id="bulk-rename-dialog">
   <div class="dialog-title">Bulk Rename — BloodHUD Display Name</div>
   <p style="font-size:12px;color:#888;">
-    Edit names below. Empty = revert to auto. Save All applies all changes.
+    Type one name and "Apply to All" to fill every row, then tweak individuals if needed.
+    Or edit each row directly. Empty = revert to auto. "Save All" commits.
   </p>
-  <div id="bulk-rename-rows" style="max-height:60vh;overflow-y:auto;border:1px solid #3a3a3a;padding:6px;"></div>
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;padding:8px;background:#1e1e1e;border:1px solid #3a3a3a;border-radius:3px;">
+    <span style="font-size:12px;color:#888;">Set all to:</span>
+    <input type="text" id="bulk-set-all-input" placeholder="e.g. Bandit"
+           style="flex:1;background:#0d0d0d;color:#d4d4d4;border:1px solid #3a3a3a;padding:5px 8px;font-size:12px;"
+           onkeydown="if(event.key==='Enter'){event.preventDefault();applyToAll();}">
+    <button onclick="applyToAll()">Apply to All</button>
+    <button class="secondary" onclick="resetBulkInputs()" title="Reset all rows to their original values">Reset</button>
+  </div>
+  <div id="bulk-rename-rows" style="max-height:55vh;overflow-y:auto;border:1px solid #3a3a3a;padding:6px;"></div>
   <div class="dialog-actions">
     <button class="secondary" onclick="document.getElementById('bulk-rename-dialog').close()">Cancel</button>
     <button onclick="performBulkRename()">Save All</button>
@@ -663,14 +672,30 @@ function bulkRename() {
   rows.sort((a, b) => (a.display_en || '').localeCompare(b.display_en || ''));
   const html = rows.map(e => {
     const cur = renames[e.key] !== undefined ? renames[e.key] : autoCleanForBloodHud(e.display_en);
+    // data-original holds the value at dialog-open so Reset can restore it
     return `<div style="display:grid;grid-template-columns:60px 200px 1fr;gap:8px;align-items:center;padding:3px 0;border-bottom:1px solid #2a2a2a;">
       <span style="color:#888;font-size:11px;">${e.key}</span>
       <span style="color:#888;font-size:11px;" title="engine: ${escapeHtml(e.display_en || '')}">${escapeHtml(e.display_en || '')}</span>
-      <input type="text" data-key="${e.key}" value="${escapeHtml(cur)}" style="width:100%;background:#1e1e1e;color:#d4d4d4;border:1px solid #3a3a3a;padding:3px 6px;font-size:12px;">
+      <input type="text" data-key="${e.key}" data-original="${escapeHtml(cur)}" value="${escapeHtml(cur)}" style="width:100%;background:#1e1e1e;color:#d4d4d4;border:1px solid #3a3a3a;padding:3px 6px;font-size:12px;">
     </div>`;
   }).join('');
   document.getElementById('bulk-rename-rows').innerHTML = html;
+  document.getElementById('bulk-set-all-input').value = '';
   document.getElementById('bulk-rename-dialog').showModal();
+  // Focus the "Set all to" input so user can immediately type
+  setTimeout(() => document.getElementById('bulk-set-all-input').focus(), 50);
+}
+
+function applyToAll() {
+  const v = document.getElementById('bulk-set-all-input').value;
+  const inputs = document.querySelectorAll('#bulk-rename-rows input');
+  for (const inp of inputs) inp.value = v;
+}
+
+function resetBulkInputs() {
+  const inputs = document.querySelectorAll('#bulk-rename-rows input');
+  for (const inp of inputs) inp.value = inp.dataset.original;
+  document.getElementById('bulk-set-all-input').value = '';
 }
 
 function performBulkRename() {
