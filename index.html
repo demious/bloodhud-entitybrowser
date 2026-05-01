@@ -268,13 +268,48 @@ const ENTRIES = RAW.entries.map(r => ({
 }));
 
 const STORAGE_KEY = 'bloodhud_character_lists_v1';
+const FILTERS_KEY = 'bloodhud_filters_v1';
 let lists = loadLists();        // {whitelist: Set<key>, blacklist: Set<key>}
 let selected = new Set();
 // Multi-select: each axis is a Set of selected values. Empty Set = match all.
-let activeFilters = { state: new Set(), ai: new Set(), boss: new Set() };
-let searchTerm = '';
-let sortKey = 'key';
-let sortDir = 1;
+const _filterDefaults = () => ({
+  state: new Set(), ai: new Set(), boss: new Set(),
+  searchTerm: '', sortKey: 'key', sortDir: 1,
+});
+let _f = loadFilters();
+let activeFilters = { state: _f.state, ai: _f.ai, boss: _f.boss };
+let searchTerm = _f.searchTerm;
+let sortKey = _f.sortKey;
+let sortDir = _f.sortDir;
+
+function loadFilters() {
+  try {
+    const raw = localStorage.getItem(FILTERS_KEY);
+    if (!raw) return _filterDefaults();
+    const j = JSON.parse(raw);
+    return {
+      state: new Set(j.state || []),
+      ai: new Set(j.ai || []),
+      boss: new Set(j.boss || []),
+      searchTerm: j.searchTerm || '',
+      sortKey: j.sortKey || 'key',
+      sortDir: j.sortDir || 1,
+    };
+  } catch (e) {
+    return _filterDefaults();
+  }
+}
+
+function saveFilters() {
+  localStorage.setItem(FILTERS_KEY, JSON.stringify({
+    state: [...activeFilters.state],
+    ai: [...activeFilters.ai],
+    boss: [...activeFilters.boss],
+    searchTerm,
+    sortKey,
+    sortDir,
+  }));
+}
 
 function loadLists() {
   try {
@@ -553,6 +588,7 @@ document.getElementById('search').addEventListener('input', e => {
     searchTerm = e.target.value.toLowerCase();
     invalidateCache();
     tblWrapper.scrollTop = 0;
+    saveFilters();
     render();
   }, 120);
 });
@@ -587,12 +623,31 @@ document.querySelectorAll('.pill').forEach(pill => {
     }
     invalidateCache();
     tblWrapper.scrollTop = 0;
+    saveFilters();
     render();
   });
 });
 
-// Default-active "All" pills
-document.querySelectorAll('.pill[data-value="all"]').forEach(p => p.classList.add('active'));
+// Restore UI from persisted filter state
+function restoreFilterUI() {
+  // Pre-fill search box
+  if (searchTerm) {
+    document.getElementById('search').value = searchTerm;
+  }
+  // For each filter axis, set pill active states
+  for (const axis of ['state', 'ai', 'boss']) {
+    const set = activeFilters[axis];
+    document.querySelectorAll(`.pill[data-filter="${axis}"]`).forEach(p => p.classList.remove('active'));
+    if (set.size === 0) {
+      document.querySelectorAll(`.pill[data-filter="${axis}"][data-value="all"]`).forEach(p => p.classList.add('active'));
+    } else {
+      document.querySelectorAll(`.pill[data-filter="${axis}"]`).forEach(p => {
+        if (set.has(p.dataset.value)) p.classList.add('active');
+      });
+    }
+  }
+}
+restoreFilterUI();
 
 document.querySelectorAll('th[data-sort]').forEach(th => {
   th.addEventListener('click', () => {
@@ -601,6 +656,7 @@ document.querySelectorAll('th[data-sort]').forEach(th => {
     else { sortKey = k; sortDir = 1; }
     invalidateCache();
     tblWrapper.scrollTop = 0;
+    saveFilters();
     render();
   });
 });
