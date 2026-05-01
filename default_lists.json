@@ -1,0 +1,6 @@
+{
+  "updated": "2026-05-01",
+  "description": "Community-curated default whitelist/blacklist for BloodHUD entity browser. Maintained by Demeous. Visitors can click 'Load Defaults' to merge these into their local lists.",
+  "whitelist": [],
+  "blacklist": []
+}
