@@ -163,6 +163,7 @@
     Blacklist: <b id="bl-count">0</b> &middot;
     Showing: <b id="visible-count">0</b>
   </span>
+  <button class="secondary" onclick="loadDefaults()" title="Merge community-curated defaults into your local lists">Load Defaults</button>
   <button class="secondary" onclick="exportLists()">Export Lists</button>
   <button class="secondary" onclick="importLists()">Import</button>
 </header>
@@ -563,6 +564,64 @@ function copyExport() {
 function importLists() {
   document.getElementById('import-text').value = '';
   document.getElementById('import-dialog').showModal();
+}
+
+async function loadDefaults() {
+  // Fetch default_lists.json from same origin (works on GitHub Pages and locally
+  // when the file sits in the same directory as this HTML).
+  let res;
+  try {
+    res = await fetch('default_lists.json', { cache: 'no-store' });
+  } catch (e) {
+    alert('Could not fetch default_lists.json: ' + e.message
+      + '\n\n(This file is served from the same directory as the page. '
+      + 'When opening the HTML directly via file://, your browser may block fetch — '
+      + 'use the GitHub Pages URL instead: https://demious.github.io/bloodhud-entitybrowser/)');
+    return;
+  }
+  if (!res.ok) {
+    alert(`default_lists.json returned HTTP ${res.status}. Defaults may not be published yet.`);
+    return;
+  }
+  let payload;
+  try {
+    payload = await res.json();
+  } catch (e) {
+    alert('default_lists.json was not valid JSON: ' + e.message);
+    return;
+  }
+
+  const wlNew = (payload.whitelist || []).map(x => typeof x === 'object' ? x.key : x);
+  const blNew = (payload.blacklist || []).map(x => typeof x === 'object' ? x.key : x);
+
+  // Count what would actually be added (not already in local lists)
+  const wlAdded = wlNew.filter(k => !lists.whitelist.has(k) && !lists.blacklist.has(k));
+  const blAdded = blNew.filter(k => !lists.blacklist.has(k) && !lists.whitelist.has(k));
+  const wlConflict = wlNew.filter(k => lists.blacklist.has(k));
+  const blConflict = blNew.filter(k => lists.whitelist.has(k));
+
+  const updated = payload.updated || 'unknown date';
+  const desc = payload.description || '';
+  const summary = `Defaults updated ${updated}\n\n`
+    + (desc ? desc + '\n\n' : '')
+    + `Will ADD to your local lists:\n`
+    + `  • ${wlAdded.length} new whitelist entries\n`
+    + `  • ${blAdded.length} new blacklist entries\n\n`
+    + (wlConflict.length || blConflict.length
+      ? `Conflicts (already tagged the OTHER way, will be SKIPPED):\n`
+      + `  • ${wlConflict.length} default-whitelist entries you've blacklisted\n`
+      + `  • ${blConflict.length} default-blacklist entries you've whitelisted\n\n`
+      : '')
+    + `Continue?`;
+
+  if (!confirm(summary)) return;
+
+  for (const k of wlAdded) lists.whitelist.add(k);
+  for (const k of blAdded) lists.blacklist.add(k);
+  saveLists();
+  invalidateCache();
+  render();
+  alert(`Merged: +${wlAdded.length} whitelist, +${blAdded.length} blacklist.`);
 }
 
 function performImport() {
