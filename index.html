@@ -180,6 +180,7 @@
   <button class="secondary" onclick="loadDefaults()" title="Merge community-curated defaults into your local lists">Load Defaults</button>
   <button class="secondary" onclick="exportLists()">Export Lists</button>
   <button class="secondary" onclick="importLists()">Import</button>
+  <button onclick="buildNewTable()" title="Publish your current lists + renames as the new community default" style="background:#2d7a2d;">Build New Table</button>
 </header>
 
 <div class="filterbar">
@@ -252,6 +253,35 @@
   <div class="dialog-actions">
     <button class="secondary" onclick="copyExport()">Copy to Clipboard</button>
     <button onclick="document.getElementById('export-dialog').close()">Close</button>
+  </div>
+</dialog>
+
+<dialog id="build-table-dialog">
+  <div class="dialog-title" style="color:#2d7a2d;">Build New Table — Publish to Community</div>
+  <p style="font-size:13px;color:#d4d4d4;line-height:1.5;">
+    This bundles your current whitelist + blacklist + renames into a JSON payload
+    and copies it to your clipboard. To publish it as the new community default
+    that everyone visiting this site will see, run the command shown below in
+    your terminal.
+  </p>
+  <div style="background:#1e1e1e;border:1px solid #3a3a3a;padding:10px;border-radius:3px;margin:10px 0;">
+    <div style="font-size:11px;color:#888;margin-bottom:6px;">Step 1 — click this:</div>
+    <button onclick="copyForBuild()" style="background:#2d7a2d;width:100%;padding:8px;font-size:13px;">Copy Lists to Clipboard</button>
+    <div id="build-copy-status" style="font-size:11px;color:#4ec9b0;margin-top:6px;height:14px;"></div>
+  </div>
+  <div style="background:#1e1e1e;border:1px solid #3a3a3a;padding:10px;border-radius:3px;margin:10px 0;">
+    <div style="font-size:11px;color:#888;margin-bottom:6px;">Step 2 — paste this into your terminal (in the BloodHUD directory):</div>
+    <code style="display:block;background:#0d0d0d;color:#4ec9b0;padding:8px;font-family:Consolas,monospace;font-size:12px;border-radius:2px;user-select:all;">python build_character_browser.py --update-defaults-from-clipboard --push</code>
+    <button onclick="copyBuildCommand()" class="secondary" style="margin-top:6px;font-size:11px;padding:3px 8px;">Copy Command</button>
+    <span id="build-cmd-status" style="font-size:11px;color:#4ec9b0;margin-left:8px;"></span>
+  </div>
+  <p style="font-size:11px;color:#888;line-height:1.5;">
+    The command reads the JSON from your clipboard, writes it to <code>default_lists.json</code>
+    in your local repo, commits with a timestamp, and pushes to GitHub. Pages rebuilds
+    in ~30 seconds. Visitors then click "Load Defaults" to pull the new version.
+  </p>
+  <div class="dialog-actions">
+    <button onclick="document.getElementById('build-table-dialog').close()">Done</button>
   </div>
 </dialog>
 
@@ -781,6 +811,74 @@ function copyExport() {
 function importLists() {
   document.getElementById('import-text').value = '';
   document.getElementById('import-dialog').showModal();
+}
+
+function buildNewTable() {
+  document.getElementById('build-copy-status').textContent = '';
+  document.getElementById('build-cmd-status').textContent = '';
+  document.getElementById('build-table-dialog').showModal();
+}
+
+function _buildExportPayload() {
+  const wlNames = ENTRIES.filter(e => lists.whitelist.has(e.key))
+    .map(e => ({key: e.key, name: e.name, display_en: e.display_en}));
+  const blNames = ENTRIES.filter(e => lists.blacklist.has(e.key))
+    .map(e => ({key: e.key, name: e.name, display_en: e.display_en}));
+  const renamesOut = {};
+  for (const k of Object.keys(renames)) renamesOut[k] = renames[k];
+  return {
+    generated: new Date().toISOString(),
+    whitelist: wlNames,
+    blacklist: blNames,
+    renames: renamesOut,
+  };
+}
+
+async function copyForBuild() {
+  const payload = _buildExportPayload();
+  const text = JSON.stringify(payload, null, 2);
+  const status = document.getElementById('build-copy-status');
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      // Fallback via temporary textarea
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    const wlN = payload.whitelist.length;
+    const blN = payload.blacklist.length;
+    const rnN = Object.keys(payload.renames).length;
+    status.textContent = `✓ Copied: ${wlN} whitelist, ${blN} blacklist, ${rnN} renames (${text.length.toLocaleString()} chars).`;
+  } catch (e) {
+    status.style.color = '#c45050';
+    status.textContent = `✗ Copy failed: ${e.message}`;
+  }
+}
+
+async function copyBuildCommand() {
+  const cmd = 'python build_character_browser.py --update-defaults-from-clipboard --push';
+  const status = document.getElementById('build-cmd-status');
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(cmd);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = cmd;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    status.textContent = '✓ Copied (overwrote your lists clipboard — re-do step 1 if needed)';
+  } catch (e) {
+    status.style.color = '#c45050';
+    status.textContent = `✗ Copy failed: ${e.message}`;
+  }
 }
 
 async function loadDefaults() {
